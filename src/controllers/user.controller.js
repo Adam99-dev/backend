@@ -3,7 +3,8 @@ import apiError from '../utils/apiError.js';
 import { User } from '../models/user.model.js';
 import fileUploader from '../utils/Cloudinary.js';
 import apiResponse from '../utils/apiResponse.js';
-// import { response } from 'express';
+import jwt from 'jsonwebtoken';
+
 
 const registerUser = asyncHandler(async (req, res) => {
     const { userName, email, fullName, password } = req.body
@@ -83,7 +84,7 @@ const registerUser = asyncHandler(async (req, res) => {
 //ANCHOR - Login User
 const loginUser = asyncHandler(async (req, res) => {
     const { userName, password, email } = req.body
-    if (!userName || !email) {
+    if (!userName && !email) {
         throw new apiError(400, "Username or email is required")
     }
     const user = await User.findOne({
@@ -112,11 +113,39 @@ const loginUser = asyncHandler(async (req, res) => {
 
 //ANCHOR - Logout User  
 const logoutUser = asyncHandler(async (req, res) => {
-    await User.findByIdAndUpdate(req.user._id, { $set: {refreshToken: undefined} }, {new: true})
+    await User.findByIdAndUpdate(req.user._id, { $set: { refreshToken: undefined } }, { new: true })
     return res.status(200)
         .clearCookie("refreshToken", { httpOnly: true, secure: true })
         .clearCookie("accessToken", { httpOnly: true, secure: true })
-        .json(new apiResponse(200,{} ,"User Logged Out Successfully"))
+        .json(new apiResponse(200, {}, "User Logged Out Successfully"))
 });
 
-export  { registerUser, loginUser, logoutUser };
+const refreshAccessToken = asyncHandler(async (req, res) => {
+    const incomingAccessToken = req.cookies.refreshToken || req.body.refreshToken
+    if (!incomingAccessToken) {
+        throw new apiError(401, "Access Denied")
+    }
+
+    try {
+        const decodedToken = jwt.verify(incomingAccessToken, process.env.REFRESH_TOKEN_SECRET_KEY)
+        const user = await User.findById(decodedToken?._id)
+    
+        if (!user) {
+            throw new apiError(404, "User not found")
+        } else {
+            if (incomingAccessToken !== user.refreshToken) {
+                throw new apiError(401, "Access Denied")
+            } else {
+                const { accessToken, newRefreshToken } = await generateAccessAndRefreshToken(user._id)
+                return res.status(200)
+                    .cookie("refreshToken", newRefreshToken, { httpOnly: true, secure: true })
+                    .cookie("accessToken", accessToken, { httpOnly: true, secure: true })
+                    .json(new apiResponse(200, { accessToken, refreshToken: newRefreshToken }, "Token Refreshed Successfully"))
+            }
+        }
+    } catch (error) {
+        throw new apiError(401, error?.message || "Access Denied")
+    }
+})
+
+export { registerUser, loginUser, logoutUser, refreshAccessToken };
