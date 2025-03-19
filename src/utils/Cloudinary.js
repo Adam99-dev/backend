@@ -22,5 +22,15 @@ const fileUploader = async (localFilePath)=>{
         return null
     }
 }
+const fileDeleter = async (publicId) => {
+    try {
+        if (!publicId) return error("Public ID is required");
+        const response = await cloudinary.uploader.destroy(publicId);
+        return response;
+    } catch (error) {
+        console.error(error);
+        return null;
+    }
+}
 
-export default fileUploader
+export  {fileDeleter, fileUploader};
